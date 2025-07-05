@@ -36,7 +36,7 @@ Grâce à ces nouveautés, tout le monde gagne en temps et en confort : les joue
    
    ```bash
    cd /path/to/CTFd/plugins
-   git clone https://github.com/yourusername/CTFD-Attempts-Remover.git
+   git https://github.com/HACK-OLYTE/CTFD-Attempts-Remover.git
 
 3. Restart your CTFd instance to load the plugin.
 
