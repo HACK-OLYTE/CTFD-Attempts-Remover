@@ -52,13 +52,14 @@ Accédez au panneau d’administration **Plugins > Attempts-remover** pour :
 Voici une vidéo de démonstration du plugin : 
 
 
-https://github.com/user-attachments/assets/88bfa26d-4e70-40ae-ba3a-bf0fb9063a9d
+https://github.com/user-attachments/assets/656cb398-fd3a-4897-8855-0e86607e8a21
+
 
 ## Dépendances
 
 - CTFd ≥ v3.x
 - Compatible avec les installations Docker et locales.
-- Un navigateur à jour est JavaScript d'activé.
+- Un navigateur à jour et JavaScript d'activé.
 
 
 ## Support
