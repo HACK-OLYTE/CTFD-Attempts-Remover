@@ -1,0 +1,310 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+  <h1>Attempts Remover - </h1>
+
+  <style>
+  .refresh-button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: background-color 0.3s ease, transform 0.1s ease;
+    }
+
+    .refresh-button:hover {
+      background-color: #45a049;
+    }
+
+    .refresh-button:active {
+      transform: scale(0.97);
+    }
+</style>
+
+  <p class="mt-3">
+    Ce plugin permet aux administrateurs de réinitialiser les tentatives échouées d’une équipe sur un challenge spécifique.<br>
+    Les équipes peuvent elles-mêmes faire une demande de déblocage directement depuis le bouton disponible sur la page des challenges.<br>
+  Cela permet à l’administration d’éviter le processus fastidieux d’une intervention manuelle, tout en appliquant automatiquement un malus préconfiguré (voir ci-dessous). 
+ </p>
+
+  <hr class="my-5" />
+  <h4>🛠️ Configuration du malus : </h4>
+  <div id="mode-box" class="alert alert-info mt-4">Chargement de la configuration...</div>
+
+  <form id="remover-form" class="mt-4">
+    <div class="mb-3">
+      <label for="mode" class="form-label fw-bold">Mode de malus :</label>
+      <select id="mode" class="form-select">
+        <option value="fixed">Coût fixe</option>
+        <option value="percent">Pourcentage</option>
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="fixed_cost" class="form-label">Coût fixe (pts à retirer)</label>
+      <input type="number" id="fixed_cost" class="form-control" value="100" />
+    </div>
+
+    <div class="mb-3">
+      <label for="percent_cost" class="form-label">Coût en % (pts du challenge)</label>
+      <input type="number" id="percent_cost" class="form-control" value="10" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">Enregistrer cette configuration</button>
+  </form>
+
+  <hr class="my-5" />
+  <h4>🚫 Équipes actuellement bloquées :</h4>
+   <button class="refresh-button" onclick="location.reload();">
+    Rafraîchir le tableau
+  </button><br><br>
+  <div class="mb-3">
+    <input type="text" id="team-filter" class="form-control" placeholder="🔍 Rechercher une équipe...">
+  </div>
+
+  <div id="blocked-teams" class="table-responsive">
+    <p>Chargement en cours...</p>
+  </div>
+
+  <hr class="my-5" />
+  <h4>📜 Historique des déblocages :</h4>
+  <div id="unblock-logs" class="table-responsive">
+    <p>Chargement des logs...</p>
+  </div>
+  <nav>
+    <ul id="pagination" class="pagination justify-content-center"></ul>
+  </nav>
+</div>
+<br>
+<footer>
+  <p style="text-align: center;">
+    <a href="https://hackolyte.fr/">
+      <img src="https://hackolyte.fr/wp-content/uploads/2024/09/cropped-cropped-logo.png" alt="Hack'olyte logo" style="height: 30px; vertical-align: middle; margin-right: 5px;">
+    </a>
+    Plugin développé par l'association <a href="https://hackolyte.fr/">Hack'olyte</a> - v1.0
+  </p>
+</footer>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const modeBox = document.getElementById("mode-box");
+  let config = {};
+
+  CTFd.fetch("/api/v1/attempts_remover/config", {
+    method: "GET",
+    credentials: "same-origin",
+  })
+  .then(res => res.json())
+  .then(data => {
+    config = data;
+    document.getElementById("mode").value = data.mode;
+    document.getElementById("fixed_cost").value = data.fixed_cost;
+    document.getElementById("percent_cost").value = data.percent_cost;
+
+    if (data.mode === "fixed") {
+      modeBox.innerHTML = `<strong>Configuration actuelle - mode fixe</strong> : chaque déblocage coûte <strong>${data.fixed_cost} points</strong>.`;
+    } else {
+      modeBox.innerHTML = `<strong>Configuration actuelle - mode pourcentage</strong> : chaque déblocage coûte <strong>${data.percent_cost}%</strong> des points du challenge (arrondi a l'inférieur).`;
+    }
+  });
+
+  document.getElementById("remover-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const payload = {
+      mode: document.getElementById("mode").value,
+      fixed_cost: parseInt(document.getElementById("fixed_cost").value),
+      percent_cost: parseInt(document.getElementById("percent_cost").value)
+    };
+
+    CTFd.fetch("/api/v1/attempts_remover/config", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(res => {
+      if (res.success) {
+        alert("✅ Configuration enregistrée !");
+        location.reload();
+      } else {
+        alert("❌ Erreur : " + (res.error || "inconnue"));
+      }
+    });
+  });
+
+  function loadBlockedTeams() {
+    CTFd.fetch("/api/v1/attempts_remover/admin_blocked", {
+      method: "GET",
+      credentials: "same-origin"
+    })
+    .then(res => res.json())
+    .then(data => {
+      const container = document.getElementById("blocked-teams");
+      if (!data || data.length === 0) {
+        container.innerHTML = `<div class="alert alert-success">✅ Aucun blocage détecté - aucune demande en cours.</div>`;
+        return;
+      }
+
+      const table = document.createElement("table");
+      table.className = "table table-bordered table-striped text-center";
+      table.innerHTML = `
+        <thead class="table-dark">
+          <tr>
+            <th>Équipe</th>
+            <th>Challenge</th>
+            <th>Points du challenge</th>
+            <th>Tentatives</th>
+            <th>Perte de points</th>
+            <th>L'équipe a demandé le déblocage ?</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+
+      const tbody = table.querySelector("tbody");
+
+      data.forEach(entry => {
+        const challengePts = entry.value || 0;
+        const cost = config.mode === "fixed"
+          ? config.fixed_cost
+          : Math.floor((challengePts * config.percent_cost) / 100);
+
+        const requestStatus = entry.requested ? '📬 Oui' : '❌ Non';
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td class="team-name">${entry.team_name}</td>
+          <td>${entry.challenge_name}</td>
+          <td>${challengePts}</td>
+          <td>${entry.fail_count} / ${entry.max_attempts}</td>
+          <td>−${cost} pts</td>
+          <td>${requestStatus}</td>
+          <td><button class="btn btn-sm btn-danger">Débloquer</button></td>
+        `;
+
+        row.querySelector("button").addEventListener("click", () => {
+          if (confirm(`Confirmer le déblocage de "${entry.team_name}" pour "${entry.challenge_name}" ?`)) {
+            CTFd.fetch("/api/v1/attempts_remover/admin_unblock", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                team_id: entry.team_id,
+                challenge_id: entry.challenge_id
+              })
+            })
+            .then(res => res.json())
+            .then(result => {
+              if (result.success) {
+                alert(`✅ ${entry.team_name} débloquée (−${result.cost} pts)`);
+                loadBlockedTeams();
+                loadUnblockLogs();
+              } else {
+                alert("❌ Erreur : " + (result.error || "inconnue"));
+              }
+            });
+          }
+        });
+
+        tbody.appendChild(row);
+      });
+
+      container.innerHTML = "";
+      container.appendChild(table);
+
+      const filterInput = document.getElementById("team-filter");
+      filterInput.addEventListener("input", () => {
+        const query = filterInput.value.toLowerCase();
+        tbody.querySelectorAll("tr").forEach(row => {
+          const team = row.querySelector(".team-name").textContent.toLowerCase();
+          row.style.display = team.includes(query) ? "" : "none";
+        });
+      });
+    });
+  }
+
+  function loadUnblockLogs() {
+    CTFd.fetch("/api/v1/attempts_remover/unblock_logs", {
+      method: "GET",
+      credentials: "same-origin"
+    })
+    .then(res => res.json())
+    .then(logs => {
+      const container = document.getElementById("unblock-logs");
+      const pagination = document.getElementById("pagination");
+      pagination.innerHTML = "";
+
+      if (!logs || logs.length === 0) {
+        container.innerHTML = `<div class="alert alert-secondary">Aucun déblocage récent enregistré.</div>`;
+        return;
+      }
+
+      const itemsPerPage = 10;
+      let currentPage = 1;
+      const totalPages = Math.ceil(logs.length / itemsPerPage);
+
+      function renderPage(page) {
+        const start = (page - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const currentLogs = logs.slice(start, end);
+
+        const table = document.createElement("table");
+        table.className = "table table-sm table-striped text-center";
+        table.innerHTML = `
+          <thead class="table-light">
+            <tr>
+              <th>Date</th>
+              <th>Admin</th>
+              <th>Équipe</th>
+              <th>Challenge</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${currentLogs.map(log => `
+              <tr>
+                <td>${new Date(log.timestamp).toLocaleString()}</td>
+                <td>${log.admin_name}</td>
+                <td>${log.team_name}</td>
+                <td>${log.challenge_name}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        `;
+
+        container.innerHTML = "";
+        container.appendChild(table);
+      }
+
+      function renderPagination() {
+        pagination.innerHTML = "";
+        for (let i = 1; i <= totalPages; i++) {
+          const li = document.createElement("li");
+          li.className = "page-item" + (i === currentPage ? " active" : "");
+          li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
+          li.addEventListener("click", (e) => {
+            e.preventDefault();
+            currentPage = i;
+            renderPage(currentPage);
+            renderPagination();
+          });
+          pagination.appendChild(li);
+        }
+      }
+
+      renderPage(currentPage);
+      renderPagination();
+    });
+  }
+
+  loadBlockedTeams();
+  loadUnblockLogs();
+});
+</script>
+{% endblock %}

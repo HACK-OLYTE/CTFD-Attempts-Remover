@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block content %}
+<head>
+  <meta name="csrf-token" content="{{ session.get('nonce') }}">
+</head>
+
+<style>
+  .refresh-button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: background-color 0.3s ease, transform 0.1s ease;
+    }
+
+    .refresh-button:hover {
+      background-color: #45a049;
+    }
+
+    .refresh-button:active {
+      transform: scale(0.97);
+    }
+</style>
+
+<div class="container mt-5">
+  <h1>Centre de déblocage des challenges - <a href="/challenges" class="btn btn-outline-secondary">
+  ← Retour aux challenges
+</a></h1>
+<br>
+  
+
+  <div id="penalty-mode" class="alert alert-info mt-4">Chargement du mode de malus...</div>
+  <br>
+
+  <p class="text-muted">
+    Votre équipe a atteint le nombre maximum de tentatives sur certains challenges.<br>
+    Vous pouvez sur cette page, contacter l’équipe support pour demander la réinitialisation des tentatives sur un challenge spécifique.
+    <br>Ne restez pas bloqués, demandez un déblocage dès maintenant !
+    <br><br><hr><br>
+    <h3>Challenge(s) actuellement bloqué(s) :</h3>
+  </p>
+  <button class="refresh-button" onclick="location.reload();">
+    Rafraîchir le tableau
+  </button>
+
+  <div id="blocked-list" class="mt-4"></div>
+
+  <hr class="mt-5" />
+  <h4>
+     Demandes de déblocage traitées durant l’événement :
+    <button class="btn btn-sm btn-outline-secondary ms-2" id="toggle-history">Afficher ▼</button>
+  </h4>
+  <div id="history-section" class="table-responsive mt-3" style="display: none;">
+    <p>Chargement...</p>
+  </div>
+  <nav>
+    <ul id="pagination" class="pagination justify-content-center" style="display: none;"></ul>
+  </nav>
+</div>
+<br><br>
+<footer>
+  <p style="text-align: center;">
+    <a href="https://hackolyte.fr/">
+      <img src="https://hackolyte.fr/wp-content/uploads/2024/09/cropped-cropped-logo.png" alt="Hack'olyte logo" style="height: 30px; vertical-align: middle; margin-right: 5px;">
+    </a>
+    Plugin développé par l'association <a href="https://hackolyte.fr/">Hack'olyte</a> - v1.0
+  </p>
+</footer>
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const container = document.getElementById("blocked-list");
+  const modeBox = document.getElementById("penalty-mode");
+  container.innerHTML = `<p>⏳ Chargement...</p>`;
+
+  async function secureFetchJson(url, options = {}) {
+    const res = await fetch(url, { credentials: "same-origin", ...options });
+    if (res.redirected && res.url.includes("/login")) {
+      window.location.href = res.url;
+      return null;
+    }
+    return res.json();
+  }
+
+  try {
+    const config = await secureFetchJson("/api/v1/attempts_remover/config");
+    if (!config) return;
+
+    const { mode, fixed_cost, percent_cost } = config;
+
+   if (mode === "fixed") {
+    modeBox.innerHTML = `<strong class="d-block text-center">Configuration actuelle du malus - Mode fixe : chaque déblocage coûte ${fixed_cost} points.</strong>`;
+    } else {
+      modeBox.innerHTML = `<strong class="d-block text-center">Configuration actuelle du malus - Mode pourcentage : chaque déblocage coûte ${percent_cost}% des points du challenge (arrondi a l'inférieur).</strong>`;
+    }
+
+    const [blocked, requests] = await Promise.all([
+      secureFetchJson("/api/v1/attempts_remover/blocked"),
+      secureFetchJson("/api/v1/attempts_remover/my_requests")
+    ]);
+
+    if (!blocked) return;
+
+    if (blocked.length === 0) {
+      container.innerHTML = `<div class="alert alert-success">✅ Aucun challenge bloqué actuellement.</div>`;
+    } else {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+      const list = document.createElement("div");
+
+      blocked.forEach(chal => {
+        const cost = mode === "fixed"
+          ? `${fixed_cost} pts`
+          : `${Math.ceil((chal.value || 0) * percent_cost / 100)} pts (${percent_cost}%)`;
+
+        const alreadyRequested = requests?.some(r => r.challenge_id === chal.challenge_id);
+        const btnId = `btn-${chal.challenge_id}`;
+
+        const card = document.createElement("div");
+        card.className = "card mb-3 shadow-sm border-secondary";
+
+        card.innerHTML = `
+          <div class="card-body">
+            <h5 class="card-title mb-2">Nom du challenge bloqué : ${chal.challenge_name} <small class="text-muted">(${chal.value} pts)</small></h5>
+            <p class="card-text">Tentatives échouées : <strong>${chal.fail_count}</strong> / ${chal.max_attempts}</p>
+            <p class="card-text">Points retirés pour déblocage : <strong>${cost}</strong></p>
+            <button id="${btnId}" class="btn ${alreadyRequested ? "btn-success disabled" : "btn-outline-primary"}">
+              ${alreadyRequested ? "✅ Demande en cours..." : "🛎️ Demander un déblocage au support"}
+            </button>
+          </div>
+        `;
+
+        list.appendChild(card);
+
+        if (!alreadyRequested) {
+          setTimeout(() => {
+            const btn = document.getElementById(btnId);
+            btn?.addEventListener("click", async () => {
+              btn.disabled = true;
+              btn.innerText = "📨 Envoi de la demande...";
+              try {
+                const data = await secureFetchJson("/api/v1/attempts_remover/request_support", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "CSRF-Token": csrfToken
+                  },
+                  body: JSON.stringify({ challenge_id: chal.challenge_id })
+                });
+
+                if (data?.success) {
+                  btn.className = "btn btn-success disabled";
+                  btn.innerText = "✅ Demande envoyée au support !";
+                } else {
+                  btn.className = "btn btn-danger";
+                  btn.innerText = "❌ Erreur, réessayer";
+                  btn.disabled = false;
+                }
+              } catch (e) {
+                console.error(e);
+                btn.className = "btn btn-danger";
+                btn.innerText = "❌ Erreur réseau";
+                btn.disabled = false;
+              }
+            });
+          }, 0);
+        }
+      });
+
+      container.innerHTML = "";
+      container.appendChild(list);
+    }
+
+    const toggleBtn = document.getElementById("toggle-history");
+    const historyContainer = document.getElementById("history-section");
+    const pagination = document.getElementById("pagination");
+    let isVisible = false;
+
+    toggleBtn.addEventListener("click", () => {
+      isVisible = !isVisible;
+      historyContainer.style.display = isVisible ? "block" : "none";
+      pagination.style.display = isVisible ? "flex" : "none";
+      toggleBtn.innerText = isVisible ? "Masquer ▲" : "Afficher ▼";
+    });
+
+    const history = await secureFetchJson("/api/v1/attempts_remover/my_history");
+    if (!history) return;
+
+    if (history.length === 0) {
+      historyContainer.innerHTML = `<div class="alert alert-secondary">Aucune demande traitée pour le moment.</div>`;
+      pagination.style.display = "none";
+    } else {
+      const itemsPerPage = 10;
+      let currentPage = 1;
+      const totalPages = Math.ceil(history.length / itemsPerPage);
+
+      function renderPage(page) {
+        const start = (page - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const currentLogs = history.slice(start, end);
+
+        const table = document.createElement("table");
+        table.className = "table table-bordered text-center";
+        table.innerHTML = `
+          <thead class="table-light">
+            <tr>
+              <th>Challenge concerné</th>
+              <th>Date de traitement de la demande</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${currentLogs.map(log => `
+              <tr>
+                <td>${log.challenge_name}</td>
+                <td>${new Date(log.timestamp).toLocaleString()}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        `;
+
+        historyContainer.innerHTML = "";
+        historyContainer.appendChild(table);
+      }
+
+      function renderPagination() {
+        pagination.innerHTML = "";
+        for (let i = 1; i <= totalPages; i++) {
+          const li = document.createElement("li");
+          li.className = "page-item" + (i === currentPage ? " active" : "");
+          li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
+          li.addEventListener("click", (e) => {
+            e.preventDefault();
+            currentPage = i;
+            renderPage(currentPage);
+            renderPagination();
+          });
+          pagination.appendChild(li);
+        }
+      }
+
+      renderPage(currentPage);
+      renderPagination();
+    }
+
+  } catch (e) {
+    console.error(e);
+    document.getElementById("blocked-list").innerHTML = `<div class="alert alert-danger">❌ Erreur de chargement.</div>`;
+    document.getElementById("history-section").innerHTML = `<div class="alert alert-danger">❌ Erreur chargement historique.</div>`;
+  }
+});
+</script>
+{% endblock %}
