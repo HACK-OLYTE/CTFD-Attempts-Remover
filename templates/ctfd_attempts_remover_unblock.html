@@ -33,15 +33,12 @@
 </a></h1>
 <br>
   
-
   <div id="penalty-mode" class="alert alert-info mt-4">Chargement du mode de malus...</div>
   <br>
 
   <p class="text-muted">
     Votre équipe a atteint le nombre maximum de tentatives sur certains challenges.<br>
-    Vous pouvez sur cette page, contacter l’équipe support pour demander la réinitialisation des tentatives sur un challenge spécifique.
-    <br>Ne restez pas bloqués, demandez un déblocage dès maintenant !
-    <br><br><hr><br>
+    Vous pouvez contacter le support pour demander une réinitialisation des tentatives.<br><br><hr><br>
     <h3>Challenge(s) actuellement bloqué(s) :</h3>
   </p>
   <button class="refresh-button" onclick="location.reload();">
@@ -52,7 +49,7 @@
 
   <hr class="mt-5" />
   <h4>
-     Demandes de déblocage traitées durant l’événement :
+     Demandes de déblocage traitées :
     <button class="btn btn-sm btn-outline-secondary ms-2" id="toggle-history">Afficher ▼</button>
   </h4>
   <div id="history-section" class="table-responsive mt-3" style="display: none;">
@@ -68,17 +65,15 @@
     <a href="https://hackolyte.fr/">
       <img src="https://hackolyte.fr/wp-content/uploads/2024/09/cropped-cropped-logo.png" alt="Hack'olyte logo" style="height: 30px; vertical-align: middle; margin-right: 5px;">
     </a>
-    Plugin développé par l'association <a href="https://hackolyte.fr/">Hack'olyte</a> - v1.0
+    Plugin développé par l'association <a href="https://hackolyte.fr/">Hack'olyte</a> - v1.1
   </p>
 </footer>
-
-
 
 <script>
 document.addEventListener("DOMContentLoaded", async () => {
   const container = document.getElementById("blocked-list");
   const modeBox = document.getElementById("penalty-mode");
-  container.innerHTML = `<p>⏳ Chargement...</p>`;
+  container.textContent = "⏳ Chargement...";
 
   async function secureFetchJson(url, options = {}) {
     const res = await fetch(url, { credentials: "same-origin", ...options });
@@ -95,11 +90,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const { mode, fixed_cost, percent_cost } = config;
 
-   if (mode === "fixed") {
-    modeBox.innerHTML = `<strong class="d-block text-center">Configuration actuelle du malus - Mode fixe : chaque déblocage coûte ${fixed_cost} points.</strong>`;
-    } else {
-      modeBox.innerHTML = `<strong class="d-block text-center">Configuration actuelle du malus - Mode pourcentage : chaque déblocage coûte ${percent_cost}% des points du challenge (arrondi a l'inférieur).</strong>`;
-    }
+    modeBox.textContent = "";
+    const strong = document.createElement("strong");
+    strong.className = "d-block text-center";
+    strong.textContent = mode === "fixed"
+      ? `Configuration actuelle du malus - Mode fixe : chaque déblocage coûte ${fixed_cost} points.`
+      : `Configuration actuelle du malus - Mode pourcentage : chaque déblocage coûte ${percent_cost}% des points du challenge.`;
+    modeBox.appendChild(strong);
 
     const [blocked, requests] = await Promise.all([
       secureFetchJson("/api/v1/attempts_remover/blocked"),
@@ -109,7 +106,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!blocked) return;
 
     if (blocked.length === 0) {
-      container.innerHTML = `<div class="alert alert-success">✅ Aucun challenge bloqué actuellement.</div>`;
+      container.textContent = "✅ Aucun challenge bloqué actuellement.";
     } else {
       const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
       const list = document.createElement("div");
@@ -125,58 +122,70 @@ document.addEventListener("DOMContentLoaded", async () => {
         const card = document.createElement("div");
         card.className = "card mb-3 shadow-sm border-secondary";
 
-        card.innerHTML = `
-          <div class="card-body">
-            <h5 class="card-title mb-2">Nom du challenge bloqué : ${chal.challenge_name} <small class="text-muted">(${chal.value} pts)</small></h5>
-            <p class="card-text">Tentatives échouées : <strong>${chal.fail_count}</strong> / ${chal.max_attempts}</p>
-            <p class="card-text">Points retirés pour déblocage : <strong>${cost}</strong></p>
-            <button id="${btnId}" class="btn ${alreadyRequested ? "btn-success disabled" : "btn-outline-primary"}">
-              ${alreadyRequested ? "✅ Demande en cours..." : "🛎️ Demander un déblocage au support"}
-            </button>
-          </div>
-        `;
+        const cardBody = document.createElement("div");
+        cardBody.className = "card-body";
 
+        const title = document.createElement("h5");
+        title.className = "card-title mb-2";
+        title.textContent = `Nom du challenge bloqué : ${chal.challenge_name} (${chal.value} pts)`;
+
+        const pAttempts = document.createElement("p");
+        pAttempts.className = "card-text";
+        pAttempts.textContent = `Tentatives échouées : ${chal.fail_count} / ${chal.max_attempts}`;
+
+        const pCost = document.createElement("p");
+        pCost.className = "card-text";
+        pCost.textContent = `Points retirés pour déblocage : ${cost}`;
+
+        const btn = document.createElement("button");
+        btn.id = btnId;
+        btn.className = `btn ${alreadyRequested ? "btn-success disabled" : "btn-outline-primary"}`;
+        btn.textContent = alreadyRequested ? "✅ Demande en cours..." : "🛎️ Demander un déblocage";
+
+        cardBody.appendChild(title);
+        cardBody.appendChild(pAttempts);
+        cardBody.appendChild(pCost);
+        cardBody.appendChild(btn);
+        card.appendChild(cardBody);
         list.appendChild(card);
 
         if (!alreadyRequested) {
-          setTimeout(() => {
-            const btn = document.getElementById(btnId);
-            btn?.addEventListener("click", async () => {
-              btn.disabled = true;
-              btn.innerText = "📨 Envoi de la demande...";
-              try {
-                const data = await secureFetchJson("/api/v1/attempts_remover/request_support", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "CSRF-Token": csrfToken
-                  },
-                  body: JSON.stringify({ challenge_id: chal.challenge_id })
-                });
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            btn.textContent = "📨 Envoi de la demande...";
+            try {
+              const data = await secureFetchJson("/api/v1/attempts_remover/request_support", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "CSRF-Token": csrfToken
+                },
+                body: JSON.stringify({ challenge_id: chal.challenge_id })
+              });
 
-                if (data?.success) {
-                  btn.className = "btn btn-success disabled";
-                  btn.innerText = "✅ Demande envoyée au support !";
-                } else {
-                  btn.className = "btn btn-danger";
-                  btn.innerText = "❌ Erreur, réessayer";
-                  btn.disabled = false;
-                }
-              } catch (e) {
-                console.error(e);
+              if (data?.success) {
+                btn.className = "btn btn-success disabled";
+                btn.textContent = "✅ Demande envoyée !";
+              } else {
                 btn.className = "btn btn-danger";
-                btn.innerText = "❌ Erreur réseau";
+                btn.textContent = "❌ Erreur, réessayer";
                 btn.disabled = false;
               }
-            });
-          }, 0);
+            } catch (e) {
+              console.error(e);
+              btn.className = "btn btn-danger";
+              btn.textContent = "❌ Erreur réseau";
+              btn.disabled = false;
+            }
+          });
         }
       });
 
-      container.innerHTML = "";
+      container.textContent = "";
       container.appendChild(list);
     }
 
+    // ----- Historique -----
     const toggleBtn = document.getElementById("toggle-history");
     const historyContainer = document.getElementById("history-section");
     const pagination = document.getElementById("pagination");
@@ -193,7 +202,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!history) return;
 
     if (history.length === 0) {
-      historyContainer.innerHTML = `<div class="alert alert-secondary">Aucune demande traitée pour le moment.</div>`;
+      historyContainer.textContent = "Aucune demande traitée pour le moment.";
       pagination.style.display = "none";
     } else {
       const itemsPerPage = 10;
@@ -205,26 +214,38 @@ document.addEventListener("DOMContentLoaded", async () => {
         const end = start + itemsPerPage;
         const currentLogs = history.slice(start, end);
 
+        historyContainer.innerHTML = "";
+
         const table = document.createElement("table");
         table.className = "table table-bordered text-center";
-        table.innerHTML = `
-          <thead class="table-light">
-            <tr>
-              <th>Challenge concerné</th>
-              <th>Date de traitement de la demande</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${currentLogs.map(log => `
-              <tr>
-                <td>${log.challenge_name}</td>
-                <td>${new Date(log.timestamp).toLocaleString()}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        `;
 
-        historyContainer.innerHTML = "";
+        const thead = document.createElement("thead");
+        thead.className = "table-light";
+        const headerRow = document.createElement("tr");
+        ["Challenge concerné", "Date de traitement"].forEach(text => {
+          const th = document.createElement("th");
+          th.textContent = text;
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        currentLogs.forEach(log => {
+          const tr = document.createElement("tr");
+
+          const tdName = document.createElement("td");
+          tdName.textContent = log.challenge_name;
+          tr.appendChild(tdName);
+
+          const tdDate = document.createElement("td");
+          tdDate.textContent = new Date(log.timestamp).toLocaleString();
+          tr.appendChild(tdDate);
+
+          tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
         historyContainer.appendChild(table);
       }
 
@@ -233,13 +254,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         for (let i = 1; i <= totalPages; i++) {
           const li = document.createElement("li");
           li.className = "page-item" + (i === currentPage ? " active" : "");
-          li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
-          li.addEventListener("click", (e) => {
+          const a = document.createElement("a");
+          a.className = "page-link";
+          a.href = "#";
+          a.textContent = i;
+          a.addEventListener("click", (e) => {
             e.preventDefault();
             currentPage = i;
             renderPage(currentPage);
             renderPagination();
           });
+          li.appendChild(a);
           pagination.appendChild(li);
         }
       }
@@ -250,8 +275,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   } catch (e) {
     console.error(e);
-    document.getElementById("blocked-list").innerHTML = `<div class="alert alert-danger">❌ Erreur de chargement.</div>`;
-    document.getElementById("history-section").innerHTML = `<div class="alert alert-danger">❌ Erreur chargement historique.</div>`;
+    container.textContent = "❌ Erreur de chargement.";
   }
 });
 </script>
