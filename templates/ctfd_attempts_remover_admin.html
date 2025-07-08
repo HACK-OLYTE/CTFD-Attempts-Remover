@@ -34,11 +34,11 @@
   <p class="mt-3">
     Ce plugin permet aux administrateurs de réinitialiser les tentatives échouées d’une équipe sur un challenge spécifique.<br>
     Les équipes peuvent elles-mêmes faire une demande de déblocage directement depuis le bouton disponible sur la page des challenges.<br>
-  Cela permet à l’administration d’éviter le processus fastidieux d’une intervention manuelle, tout en appliquant automatiquement un malus préconfiguré (voir ci-dessous). 
- </p>
+    Cela permet à l’administration d’éviter le processus fastidieux d’une intervention manuelle, tout en appliquant automatiquement un malus préconfiguré (voir ci-dessous). 
+  </p>
 
   <hr class="my-5" />
-  <h4>🛠️ Configuration du malus : </h4>
+  <h4>🛠️ Configuration du malus :</h4>
   <div id="mode-box" class="alert alert-info mt-4">Chargement de la configuration...</div>
 
   <form id="remover-form" class="mt-4">
@@ -65,7 +65,7 @@
 
   <hr class="my-5" />
   <h4>🚫 Équipes actuellement bloquées :</h4>
-   <button class="refresh-button" onclick="location.reload();">
+  <button class="refresh-button" onclick="location.reload();">
     Rafraîchir le tableau
   </button><br><br>
   <div class="mb-3">
@@ -91,7 +91,7 @@
     <a href="https://hackolyte.fr/">
       <img src="https://hackolyte.fr/wp-content/uploads/2024/09/cropped-cropped-logo.png" alt="Hack'olyte logo" style="height: 30px; vertical-align: middle; margin-right: 5px;">
     </a>
-    Plugin développé par l'association <a href="https://hackolyte.fr/">Hack'olyte</a> - v1.0
+    Plugin développé par l'association <a href="https://hackolyte.fr/">Hack'olyte</a> - v1.1
   </p>
 </footer>
 
@@ -111,11 +111,12 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("fixed_cost").value = data.fixed_cost;
     document.getElementById("percent_cost").value = data.percent_cost;
 
-    if (data.mode === "fixed") {
-      modeBox.innerHTML = `<strong>Configuration actuelle - mode fixe</strong> : chaque déblocage coûte <strong>${data.fixed_cost} points</strong>.`;
-    } else {
-      modeBox.innerHTML = `<strong>Configuration actuelle - mode pourcentage</strong> : chaque déblocage coûte <strong>${data.percent_cost}%</strong> des points du challenge (arrondi a l'inférieur).`;
-    }
+    modeBox.textContent = "";
+    const strong = document.createElement("strong");
+    strong.textContent = data.mode === "fixed"
+      ? `Configuration actuelle - mode fixe : chaque déblocage coûte ${data.fixed_cost} points.`
+      : `Configuration actuelle - mode pourcentage : chaque déblocage coûte ${data.percent_cost}% des points du challenge.`;
+    modeBox.appendChild(strong);
   });
 
   document.getElementById("remover-form").addEventListener("submit", function (e) {
@@ -151,29 +152,28 @@ document.addEventListener("DOMContentLoaded", function () {
     .then(res => res.json())
     .then(data => {
       const container = document.getElementById("blocked-teams");
+      container.textContent = "";
+
       if (!data || data.length === 0) {
-        container.innerHTML = `<div class="alert alert-success">✅ Aucun blocage détecté - aucune demande en cours.</div>`;
+        container.textContent = "✅ Aucun blocage détecté - aucune demande en cours.";
         return;
       }
 
       const table = document.createElement("table");
       table.className = "table table-bordered table-striped text-center";
-      table.innerHTML = `
-        <thead class="table-dark">
-          <tr>
-            <th>Équipe</th>
-            <th>Challenge</th>
-            <th>Points du challenge</th>
-            <th>Tentatives</th>
-            <th>Perte de points</th>
-            <th>L'équipe a demandé le déblocage ?</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      `;
 
-      const tbody = table.querySelector("tbody");
+      const thead = document.createElement("thead");
+      thead.className = "table-dark";
+      const headerRow = document.createElement("tr");
+      ["Équipe", "Challenge", "Points", "Tentatives", "Perte", "Demande ?", "Action"].forEach(text => {
+        const th = document.createElement("th");
+        th.textContent = text;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
 
       data.forEach(entry => {
         const challengePts = entry.value || 0;
@@ -181,20 +181,38 @@ document.addEventListener("DOMContentLoaded", function () {
           ? config.fixed_cost
           : Math.floor((challengePts * config.percent_cost) / 100);
 
-        const requestStatus = entry.requested ? '📬 Oui' : '❌ Non';
-
         const row = document.createElement("tr");
-        row.innerHTML = `
-          <td class="team-name">${entry.team_name}</td>
-          <td>${entry.challenge_name}</td>
-          <td>${challengePts}</td>
-          <td>${entry.fail_count} / ${entry.max_attempts}</td>
-          <td>−${cost} pts</td>
-          <td>${requestStatus}</td>
-          <td><button class="btn btn-sm btn-danger">Débloquer</button></td>
-        `;
 
-        row.querySelector("button").addEventListener("click", () => {
+        const tdTeam = document.createElement("td");
+        tdTeam.textContent = entry.team_name;
+        tdTeam.className = "team-name";
+        row.appendChild(tdTeam);
+
+        const tdChallenge = document.createElement("td");
+        tdChallenge.textContent = entry.challenge_name;
+        row.appendChild(tdChallenge);
+
+        const tdValue = document.createElement("td");
+        tdValue.textContent = challengePts;
+        row.appendChild(tdValue);
+
+        const tdFails = document.createElement("td");
+        tdFails.textContent = `${entry.fail_count} / ${entry.max_attempts}`;
+        row.appendChild(tdFails);
+
+        const tdCost = document.createElement("td");
+        tdCost.textContent = `−${cost} pts`;
+        row.appendChild(tdCost);
+
+        const tdReq = document.createElement("td");
+        tdReq.textContent = entry.requested ? "📬 Oui" : "❌ Non";
+        row.appendChild(tdReq);
+
+        const tdAction = document.createElement("td");
+        const btn = document.createElement("button");
+        btn.className = "btn btn-sm btn-danger";
+        btn.textContent = "Débloquer";
+        btn.addEventListener("click", () => {
           if (confirm(`Confirmer le déblocage de "${entry.team_name}" pour "${entry.challenge_name}" ?`)) {
             CTFd.fetch("/api/v1/attempts_remover/admin_unblock", {
               method: "POST",
@@ -217,11 +235,13 @@ document.addEventListener("DOMContentLoaded", function () {
             });
           }
         });
+        tdAction.appendChild(btn);
+        row.appendChild(tdAction);
 
         tbody.appendChild(row);
       });
 
-      container.innerHTML = "";
+      table.appendChild(tbody);
       container.appendChild(table);
 
       const filterInput = document.getElementById("team-filter");
@@ -247,7 +267,7 @@ document.addEventListener("DOMContentLoaded", function () {
       pagination.innerHTML = "";
 
       if (!logs || logs.length === 0) {
-        container.innerHTML = `<div class="alert alert-secondary">Aucun déblocage récent enregistré.</div>`;
+        container.textContent = "Aucun déblocage récent enregistré.";
         return;
       }
 
@@ -260,30 +280,46 @@ document.addEventListener("DOMContentLoaded", function () {
         const end = start + itemsPerPage;
         const currentLogs = logs.slice(start, end);
 
+        container.innerHTML = "";
+
         const table = document.createElement("table");
         table.className = "table table-sm table-striped text-center";
-        table.innerHTML = `
-          <thead class="table-light">
-            <tr>
-              <th>Date</th>
-              <th>Admin</th>
-              <th>Équipe</th>
-              <th>Challenge</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${currentLogs.map(log => `
-              <tr>
-                <td>${new Date(log.timestamp).toLocaleString()}</td>
-                <td>${log.admin_name}</td>
-                <td>${log.team_name}</td>
-                <td>${log.challenge_name}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        `;
 
-        container.innerHTML = "";
+        const thead = document.createElement("thead");
+        thead.className = "table-light";
+        const headerRow = document.createElement("tr");
+        ["Date", "Admin", "Équipe", "Challenge"].forEach(text => {
+          const th = document.createElement("th");
+          th.textContent = text;
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        currentLogs.forEach(log => {
+          const tr = document.createElement("tr");
+
+          const tdDate = document.createElement("td");
+          tdDate.textContent = new Date(log.timestamp).toLocaleString();
+          tr.appendChild(tdDate);
+
+          const tdAdmin = document.createElement("td");
+          tdAdmin.textContent = log.admin_name;
+          tr.appendChild(tdAdmin);
+
+          const tdTeam = document.createElement("td");
+          tdTeam.textContent = log.team_name;
+          tr.appendChild(tdTeam);
+
+          const tdChallenge = document.createElement("td");
+          tdChallenge.textContent = log.challenge_name;
+          tr.appendChild(tdChallenge);
+
+          tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
         container.appendChild(table);
       }
 
@@ -292,13 +328,17 @@ document.addEventListener("DOMContentLoaded", function () {
         for (let i = 1; i <= totalPages; i++) {
           const li = document.createElement("li");
           li.className = "page-item" + (i === currentPage ? " active" : "");
-          li.innerHTML = `<a class="page-link" href="#">${i}</a>`;
-          li.addEventListener("click", (e) => {
+          const a = document.createElement("a");
+          a.className = "page-link";
+          a.href = "#";
+          a.textContent = i;
+          a.addEventListener("click", (e) => {
             e.preventDefault();
             currentPage = i;
             renderPage(currentPage);
             renderPagination();
           });
+          li.appendChild(a);
           pagination.appendChild(li);
         }
       }
